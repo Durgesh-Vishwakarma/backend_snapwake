@@ -1,0 +1,15 @@
+.env
+google-vision-service-account.json
+
+node_modules/
+.expo/
+.expo-shared/
+web-build/
+dist/
+build/
+coverage/
+.DS_Store
+*.log
+*.tmp
+*.swp
+.env.*
