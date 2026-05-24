@@ -3,6 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import os from "os";
 import { PORT } from "./config/env.js";
+import { authRouter } from "./routes/auth.routes.js";
 import { verifyRouter } from "./routes/verify.routes.js";
 import { logEvent } from "./utils/logger.js";
 import { errorResponse } from "./utils/response.js";
@@ -29,6 +30,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
+app.use("/api/auth", authRouter);
 app.use("/api/verify", verifyRouter);
 
 app.use((_req, res) => {
