@@ -42,7 +42,6 @@ export async function verifyGoogleIdToken(idToken) {
       email: user.email,
       name: user.name,
       provider: "google",
-      sub: user.id,
     },
     JWT_SECRET,
     {
