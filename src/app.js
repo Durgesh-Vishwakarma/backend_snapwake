@@ -11,8 +11,8 @@ import { errorResponse } from "./utils/response.js";
 const app = express();
 
 app.use((req, res, next) => {
-  req.setTimeout(25_000);
-  res.setTimeout(25_000);
+  req.setTimeout(60_000);
+  res.setTimeout(60_000);
   next();
 });
 
