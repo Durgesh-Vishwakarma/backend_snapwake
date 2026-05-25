@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import os from "os";
+import { testDatabaseConnection } from "./config/db.js";
 import { PORT } from "./config/env.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { verifyRouter } from "./routes/verify.routes.js";
@@ -28,6 +29,25 @@ app.get("/health", (_req, res) => {
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
   });
+});
+
+app.get("/health/db", async (_req, res) => {
+  try {
+    const timestamp = await testDatabaseConnection();
+
+    return res.status(200).json({
+      ok: true,
+      database: "connected",
+      timestamp,
+    });
+  } catch (error) {
+    logEvent("health", "db_check_failed", {
+      message: error.message,
+      name: error.name,
+    });
+
+    return res.status(500).json(errorResponse("Database is not connected."));
+  }
 });
 
 app.use("/api/auth", authRouter);
