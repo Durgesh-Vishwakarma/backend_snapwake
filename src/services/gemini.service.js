@@ -18,12 +18,17 @@ const getClient = () => {
 };
 
 const buildPrompt = ({ challengeTitle, targets = [] }) => {
-  const targetText = targets.length > 0 ? targets.join(", ") : challengeTitle;
+  const targetText = targets.length > 0
+    ? targets.map((target) => `- ${target}`).join("\n")
+    : `- ${challengeTitle}`;
 
   return [
-    "You are verifying a wake-up alarm challenge.",
-    `The image must clearly show: "${targetText}".`,
-    "Reply with exactly one word only: YES or NO.",
+     "You are verifying a wake-up alarm challenge.",
+      "Decide whether the photo clearly shows at least one of these visual targets:",
+      targetText,
+      "Accept normal real-camera photos when the requested subject is visible, even if the framing or angle is not perfect.",
+      "Reject only if the requested subject is missing, too blurry, too dark, blocked, or the photo shows an unrelated subject.",
+      "Reply with exactly one word only: YES or NO.",
   ].join("\n");
 };
 
