@@ -71,11 +71,28 @@ export const verifyWakeChallenge = async (req, res) => {
     const payload = parsed.data;
     const targets = parseTargets(payload.targets);
 
+    logEvent("info", "request.received", {
+      requestId,
+      challengeId: payload.challengeId,
+      imageBytes: req.file.buffer.length,
+      mimetype: req.file.mimetype,
+    });
+
+    const antiCheatStartedAt = Date.now();
     const antiCheat = await runAntiCheatChecks({
       image: req.file.buffer,
       mimetype: req.file.mimetype,
       capturedAt: payload.capturedAt,
       strictness: VERIFICATION_STRICTNESS,
+    });
+    const antiCheatDurationMs = Date.now() - antiCheatStartedAt;
+
+    logEvent(antiCheat.passed ? "info" : "warn", "anti_cheat.complete", {
+      requestId,
+      challengeId: payload.challengeId,
+      durationMs: antiCheatDurationMs,
+      passed: antiCheat.passed,
+      reason: antiCheat.reason,
     });
 
     if (!antiCheat.passed) {
@@ -100,7 +117,9 @@ export const verifyWakeChallenge = async (req, res) => {
 
     const result = await verifyImageWithGemini({
       image: req.file.buffer,
+      challengeId: payload.challengeId,
       challengeTitle: payload.challengeTitle,
+      requestId,
       targets,
     });
     const status = result.success ? 200 : 422;

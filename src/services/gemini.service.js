@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import sharp from "sharp";
 import { GEMINI_API_KEY } from "../config/env.js";
 import {
@@ -7,15 +7,14 @@ import {
   IMAGE_JPEG_QUALITY,
   IMAGE_OPTIMIZE_WIDTH,
 } from "../config/verification.js";
+import { logEvent } from "../utils/logger.js";
 import { verificationResponse } from "../utils/response.js";
 
-const getClient = () => {
-  if (!GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is missing.");
-  }
+if (!GEMINI_API_KEY) {
+  throw new Error("GEMINI_API_KEY is missing.");
+}
 
-  return new GoogleGenerativeAI(GEMINI_API_KEY);
-};
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 const buildPrompt = ({ challengeTitle, targets = [] }) => {
   const targetText = targets.length > 0
@@ -43,35 +42,64 @@ const withTimeout = (promise, timeoutMs) =>
 export const verifyImageWithGemini = async ({
   image,
   challengeTitle,
+  challengeId,
+  requestId,
   targets = [],
 }) => {
+  const optimizeStartedAt = Date.now();
   const optimizedImage = await sharp(image)
+    .rotate()
     .resize({ width: IMAGE_OPTIMIZE_WIDTH, withoutEnlargement: true })
-    .jpeg({ quality: IMAGE_JPEG_QUALITY })
+    .jpeg({ quality: IMAGE_JPEG_QUALITY, mozjpeg: true })
     .toBuffer();
+  const optimizeDurationMs = Date.now() - optimizeStartedAt;
 
-  const model = getClient().getGenerativeModel({
-    model: GEMINI_MODEL,
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 2,
-    },
+  logEvent("info", "image.optimized", {
+    requestId,
+    challengeId,
+    durationMs: optimizeDurationMs,
+    inputBytes: image.length,
+    outputBytes: optimizedImage.length,
+    width: IMAGE_OPTIMIZE_WIDTH,
+    quality: IMAGE_JPEG_QUALITY,
   });
 
-  const result = await withTimeout(
-    model.generateContent([
-      {
-        inlineData: {
-          data: optimizedImage.toString("base64"),
-          mimeType: "image/jpeg",
+  const geminiStartedAt = Date.now();
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [
+        {
+          inlineData: {
+            data: optimizedImage.toString("base64"),
+            mimeType: "image/jpeg",
+          },
+        },
+        {
+          text: buildPrompt({ challengeTitle, targets }),
+        },
+      ],
+      config: {
+        temperature: 0,
+        maxOutputTokens: 2,
+        thinkingConfig: {
+          thinkingBudget: 0,
         },
       },
-      buildPrompt({ challengeTitle, targets }),
-    ]),
+    }),
     GEMINI_TIMEOUT_MS,
   );
+  const geminiDurationMs = Date.now() - geminiStartedAt;
 
-  const text = (await result.response).text().trim().toUpperCase();
+  logEvent("info", "gemini.complete", {
+    requestId,
+    challengeId,
+    durationMs: geminiDurationMs,
+    model: GEMINI_MODEL,
+    timeoutMs: GEMINI_TIMEOUT_MS,
+  });
+
+  const text = (response.text ?? "").trim().toUpperCase();
   const success = text === "YES";
 
   return verificationResponse({
