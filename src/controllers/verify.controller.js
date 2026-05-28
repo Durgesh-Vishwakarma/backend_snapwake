@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { VERIFICATION_STRICTNESS } from "../config/verification.js";
-import { runAntiCheatChecks } from "../services/antiCheat.service.js";
 import { verifyImageWithGemini } from "../services/gemini.service.js";
+import { prepareVerificationImage } from "../services/imagePreparation.service.js";
 import { logEvent } from "../utils/logger.js";
 import { errorResponse, verificationResponse } from "../utils/response.js";
 
@@ -78,31 +78,36 @@ export const verifyWakeChallenge = async (req, res) => {
       mimetype: req.file.mimetype,
     });
 
-    const antiCheatStartedAt = Date.now();
-    const antiCheat = await runAntiCheatChecks({
+    const preparationStartedAt = Date.now();
+    const preparedImage = await prepareVerificationImage({
       image: req.file.buffer,
       mimetype: req.file.mimetype,
       capturedAt: payload.capturedAt,
       strictness: VERIFICATION_STRICTNESS,
     });
-    const antiCheatDurationMs = Date.now() - antiCheatStartedAt;
+    const preparationDurationMs = Date.now() - preparationStartedAt;
 
-    logEvent(antiCheat.passed ? "info" : "warn", "anti_cheat.complete", {
+    logEvent(preparedImage.passed ? "info" : "warn", "image_preparation.complete", {
       requestId,
       challengeId: payload.challengeId,
-      durationMs: antiCheatDurationMs,
-      passed: antiCheat.passed,
-      reason: antiCheat.reason,
+      durationMs: preparationDurationMs,
+      antiCheatDurationMs: preparedImage.timings?.analysisDurationMs,
+      optimizationDurationMs: preparedImage.timings?.optimizationDurationMs,
+      inputBytes: req.file.buffer.length,
+      outputBytes: preparedImage.optimizedBytes,
+      passed: preparedImage.passed,
+      reason: preparedImage.reason,
+      metrics: preparedImage.metrics,
     });
 
-    if (!antiCheat.passed) {
+    if (!preparedImage.passed) {
       logComplete({
         level: "warn",
         requestId,
         challengeId: payload.challengeId,
         status: 422,
         startedAt,
-        reason: antiCheat.reason,
+        reason: preparedImage.reason,
       });
 
       return res.status(422).json(
@@ -110,15 +115,16 @@ export const verifyWakeChallenge = async (req, res) => {
           success: false,
           confidence: 0,
           provider: "anti-cheat",
-          message: antiCheat.reason,
+          message: preparedImage.reason,
         }),
       );
     }
 
     const result = await verifyImageWithGemini({
-      image: req.file.buffer,
+      image: preparedImage.optimizedImage,
       challengeId: payload.challengeId,
       challengeTitle: payload.challengeTitle,
+      imageMimeType: "image/jpeg",
       requestId,
       targets,
     });

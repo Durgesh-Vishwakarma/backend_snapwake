@@ -1,12 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
-import sharp from "sharp";
 import { GEMINI_API_KEY } from "../config/env.js";
-import {
-  GEMINI_MODEL,
-  GEMINI_TIMEOUT_MS,
-  IMAGE_JPEG_QUALITY,
-  IMAGE_OPTIMIZE_WIDTH,
-} from "../config/verification.js";
+import { GEMINI_MODEL, GEMINI_TIMEOUT_MS } from "../config/verification.js";
 import { logEvent } from "../utils/logger.js";
 import { verificationResponse } from "../utils/response.js";
 
@@ -17,18 +11,11 @@ if (!GEMINI_API_KEY) {
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 const buildPrompt = ({ challengeTitle, targets = [] }) => {
-  const targetText = targets.length > 0
-    ? targets.map((target) => `- ${target}`).join("\n")
-    : `- ${challengeTitle}`;
+  if (targets.length > 0) {
+    return `Target can be one of: ${targets.join(", ")}. Does the image clearly show at least one target? Reply only YES or NO.`;
+  }
 
-  return [
-     "You are verifying a wake-up alarm challenge.",
-      "Decide whether the photo clearly shows at least one of these visual targets:",
-      targetText,
-      "Accept normal real-camera photos when the requested subject is visible, even if the framing or angle is not perfect.",
-      "Reject only if the requested subject is missing, too blurry, too dark, blocked, or the photo shows an unrelated subject.",
-      "Reply with exactly one word only: YES or NO.",
-  ].join("\n");
+  return `Target: ${challengeTitle}. Does the image clearly show this target? Reply only YES or NO.`;
 };
 
 const withTimeout = (promise, timeoutMs) =>
@@ -43,27 +30,10 @@ export const verifyImageWithGemini = async ({
   image,
   challengeTitle,
   challengeId,
+  imageMimeType = "image/jpeg",
   requestId,
   targets = [],
 }) => {
-  const optimizeStartedAt = Date.now();
-  const optimizedImage = await sharp(image)
-    .rotate()
-    .resize({ width: IMAGE_OPTIMIZE_WIDTH, withoutEnlargement: true })
-    .jpeg({ quality: IMAGE_JPEG_QUALITY, mozjpeg: true })
-    .toBuffer();
-  const optimizeDurationMs = Date.now() - optimizeStartedAt;
-
-  logEvent("info", "image.optimized", {
-    requestId,
-    challengeId,
-    durationMs: optimizeDurationMs,
-    inputBytes: image.length,
-    outputBytes: optimizedImage.length,
-    width: IMAGE_OPTIMIZE_WIDTH,
-    quality: IMAGE_JPEG_QUALITY,
-  });
-
   const geminiStartedAt = Date.now();
   const response = await withTimeout(
     ai.models.generateContent({
@@ -71,8 +41,8 @@ export const verifyImageWithGemini = async ({
       contents: [
         {
           inlineData: {
-            data: optimizedImage.toString("base64"),
-            mimeType: "image/jpeg",
+            data: image.toString("base64"),
+            mimeType: imageMimeType,
           },
         },
         {
@@ -95,6 +65,7 @@ export const verifyImageWithGemini = async ({
     requestId,
     challengeId,
     durationMs: geminiDurationMs,
+    imageBytes: image.length,
     model: GEMINI_MODEL,
     timeoutMs: GEMINI_TIMEOUT_MS,
   });
